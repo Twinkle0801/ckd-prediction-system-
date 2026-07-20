@@ -50,3 +50,19 @@ df_clean.to_csv("data/processed/kidney_clean.csv", index=False)
 ```
 
 This runs the full cleaning pipeline (categorical standardization, dtype fixes, missing-value imputation) defined in `src/cleaning.py` and writes the output to `data/processed/`.
+
+### Feature Selection: Correlation Pruning
+
+Checked pairwise correlations among numeric features using a 0.9 absolute-correlation threshold 
+(standard cutoff for flagging near-duplicate/redundant predictors).
+
+**Result:** No feature pairs exceeded 0.9, so no columns were dropped at this stage.
+
+**Notable pair reviewed manually** (expected to be correlated given known physiology):
+- `hemo` (hemoglobin) vs `pcv` (packed cell volume): corr = **0.847** — kept both, below threshold. 
+  These measure overlapping but not identical physiology (hemoglobin concentration vs. red blood 
+  cell volume fraction), so retaining both is defensible at this correlation level.
+
+**Why 0.9 and not lower (e.g. 0.7–0.8):** a stricter threshold risks discarding clinically 
+meaningful features that are correlated but not redundant — in a recall-first CKD model, 
+losing a weak-but-real signal is a bigger risk than keeping two moderately correlated labs.
