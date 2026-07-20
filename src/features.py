@@ -1,4 +1,3 @@
-
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
@@ -13,6 +12,12 @@ def encode_categoricals(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     for col in CAT_COLS:
         df[col] = df[col].astype(str).str.strip().str.lower().map(BINARY_MAP)
+
+    # FIX: impute missing categoricals with the mode, excluding the target column
+    impute_cols = [c for c in CAT_COLS if c != "classification"]
+    for col in impute_cols:
+        mode_val = df[col].mode()[0]
+        df[col] = df[col].fillna(mode_val)
     return df
 
 def scale_numeric(df: pd.DataFrame, scaler: StandardScaler = None, fit: bool = True):
@@ -26,12 +31,19 @@ def scale_numeric(df: pd.DataFrame, scaler: StandardScaler = None, fit: bool = T
 
 def add_domain_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    df["bun_creatinine_ratio"] = df["bu"] / df["sc"]
-    df["anemia_ckd_flag"] = ((df["ane"] == 1) & (df["hemo"] < -0.5)).astype(int)
+    # FIX: compute the ratio on RAW lab values — this function must run
+    # BEFORE scale_numeric now (see build_features below)
+    df["bun_creatinine_ratio"] = df["bu"] / df["sc"].replace(0, np.nan)
+    df["bun_creatinine_ratio"] = df["bun_creatinine_ratio"].fillna(df["bun_creatinine_ratio"].median())
+
+    # FIX: anemia flag now uses raw hemoglobin (g/dL), not a scaled z-score threshold.
+    # 12 g/dL is a common general low-hemoglobin cutoff — replace with your actual
+    # clinical reference range if your data dictionary specifies a different one.
+    df["anemia_ckd_flag"] = ((df["ane"] == 1) & (df["hemo"] < 12)).astype(int)
     return df
 
 def build_features(df: pd.DataFrame, fit: bool = True, scaler: StandardScaler = None):
     df = encode_categoricals(df)
+    df = add_domain_features(df)              # FIX: moved BEFORE scale_numeric
     df, scaler = scale_numeric(df, scaler=scaler, fit=fit)
-    df = add_domain_features(df)
     return df, scaler
