@@ -1,0 +1,27 @@
+# Dockerfile.api
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# build-essential: needed to build some ML wheels
+# libgomp1: LightGBM's compiled extension needs this OpenMP runtime lib at
+# import time (not just build time)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-docker.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY api/ ./api/
+COPY models/ ./models/
+
+# Non-root user -- don't run the container as root
+RUN useradd --create-home appuser
+USER appuser
+
+EXPOSE 8000
+
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

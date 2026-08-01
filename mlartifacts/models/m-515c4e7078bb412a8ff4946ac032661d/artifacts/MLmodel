@@ -1,0 +1,23 @@
+artifact_path: file:///c:/Users/Twinkle/OneDrive/Desktop/ckd-prediction-system/mlartifacts/models/m-515c4e7078bb412a8ff4946ac032661d/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.13.5
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: pickle
+    sklearn_version: 1.9.0
+    skops_trusted_types: null
+mlflow_version: 3.14.0
+model_id: m-515c4e7078bb412a8ff4946ac032661d
+model_size_bytes: 87340
+model_uuid: m-515c4e7078bb412a8ff4946ac032661d
+prompts: null
+run_id: ef035463a5f548cdbe06fce30b84e21e
+utc_time_created: '2026-07-25 04:48:55.998026'

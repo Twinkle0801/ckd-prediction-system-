@@ -10,9 +10,8 @@ def clean_ckd_data(raw_path: str) -> pd.DataFrame:
 
     # Step 2: standardize categorical text
     for col in CATEGORICAL_COLS:
-        df[col] = df[col].astype(str).str.strip().str.replace('\t', '', regex=False)
+        df[col] = df[col].astype("string").str.strip().str.replace('\t', '', regex=False)
         df[col] = df[col].replace('?', pd.NA)
-
     # Step 3: fix numeric dtypes
     for col in NUMERIC_COLS:
         df[col] = pd.to_numeric(df[col], errors='coerce')

@@ -47,3 +47,30 @@ def build_features(df: pd.DataFrame, fit: bool = True, scaler: StandardScaler = 
     df = add_domain_features(df)              # FIX: moved BEFORE scale_numeric
     df, scaler = scale_numeric(df, scaler=scaler, fit=fit)
     return df, scaler
+
+from sklearn.preprocessing import StandardScaler
+
+
+def scale_train_test(
+    X_train: pd.DataFrame,
+    X_test: pd.DataFrame
+):
+    """
+    Fit StandardScaler on the training data only,
+    then transform both training and testing data.
+    """
+
+    scaler = StandardScaler()
+
+    X_train = X_train.copy()
+    X_test = X_test.copy()
+
+    X_train[NUMERIC_COLS] = scaler.fit_transform(
+        X_train[NUMERIC_COLS]
+    )
+
+    X_test[NUMERIC_COLS] = scaler.transform(
+        X_test[NUMERIC_COLS]
+    )
+
+    return X_train, X_test, scaler
