@@ -579,3 +579,26 @@ Built using **Python**, **Streamlit**, **XGBoost**, **SHAP**, and **MLflow**.
 This tool is intended for educational and clinical decision-support purposes only and should not be used as a substitute for professional medical diagnosis.
 """
     )
+
+# ==========================================================
+# AI ASSISTANT (Day 15 scaffold -- real logic lands Day 16-18)
+# ==========================================================
+
+st.divider()
+st.markdown("## 🤖 AI Health Assistant (Preview)")
+st.caption(
+    "Architecture scaffold only -- full prediction-explainer and reference "
+    "Q&A land in upcoming phases."
+)
+
+user_question = st.chat_input("Ask about this prediction or general CKD info...")
+
+if user_question:
+    from src.ai_assistant.router import route_message
+
+    result = route_message(user_question)
+
+    if result["tool"] == "guardrail_refusal":
+        st.warning(result["message"])
+    else:
+        st.info(f"Routed to: **{result['tool']}** (not yet implemented — Day 16/17)")
