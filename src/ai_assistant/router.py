@@ -22,6 +22,13 @@ def route_message(user_message: str, context: dict = None) -> dict:
     context can carry the current session's last prediction result / SHAP
     values, if the user is asking a follow-up about a prediction they just
     got, rather than a general reference question.
+
+    Returns a dict describing what happened. Shape varies by tool:
+      - guardrail_refusal: {"tool": "guardrail_refusal", "message": str}
+      - shap_explainer:    {"tool": "shap_explainer", "explanation": str,
+                             "grounded": bool, "ungrounded_numbers": list}
+      - rag:               {"tool": "rag", "status": "not_yet_implemented"}
+      - none_matched:      {"tool": "none_matched", "status": str}
     """
     guardrail_result = check_guardrails(user_message)
     if guardrail_result["blocked"]:
@@ -30,7 +37,10 @@ def route_message(user_message: str, context: dict = None) -> dict:
     lowered = user_message.lower()
 
     if context and context.get("last_prediction") and any(k in lowered for k in EXPLAIN_KEYWORDS):
-        return {"tool": "shap_explainer", "status": "not_yet_implemented"}
+        prediction_result = context["last_prediction"]
+        shap_explanation = context["last_shap_explanation"]
+        tool_result = call_shap_explainer_tool(prediction_result, shap_explanation)
+        return {"tool": "shap_explainer", **tool_result}
 
     if any(k in lowered for k in RAG_KEYWORDS):
         return {"tool": "rag", "status": "not_yet_implemented"}
