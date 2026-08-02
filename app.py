@@ -515,7 +515,7 @@ This tool is intended for educational and clinical decision-support purposes onl
     )
 
 # ==========================================================
-# AI ASSISTANT (Day 16 -- real prediction-explainer wired in)
+# AI ASSISTANT (Day 17 -- RAG tool wired in alongside Day 16's explainer)
 # ==========================================================
 
 st.divider()
@@ -544,14 +544,33 @@ if user_question:
 
     if route_result["tool"] == "guardrail_refusal":
         st.warning(route_result["message"])
+
     elif route_result["tool"] == "shap_explainer":
         st.chat_message("assistant").write(route_result["explanation"])
+
         if not route_result["grounded"]:
             st.error(
-                f"⚠️ Grounding check failed -- this explanation may reference "
+                f"⚠️ Grounding check failed — this explanation may reference "
                 f"numbers not in the source data: {route_result['ungrounded_numbers']}"
             )
+
     elif route_result["tool"] == "rag":
-        st.info("General reference Q&A not yet implemented (Day 17).")
+        # Display the grounded RAG answer
+        st.chat_message("assistant").write(route_result["answer"])
+
+        # Display retrieved source documents
+        if route_result.get("sources"):
+            st.caption(
+                f"📚 Sources: {', '.join(route_result['sources'])}"
+            )
+
+        # Notify the user if retrieval had insufficient context
+        if not route_result.get("has_grounded_context", False):
+            st.info(
+                "No sufficiently relevant reference material was found for this question."
+            )
+
     else:
-        st.info("I couldn't confidently match this to a specific capability yet.")
+        st.info(
+            "I couldn't confidently match this to a specific capability yet."
+        )

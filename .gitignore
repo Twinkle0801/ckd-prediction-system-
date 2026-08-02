@@ -6,3 +6,5 @@ data/raw/*.csv
 data/processed/*.csv
 mlruns/
 .coverage
+
+data/chroma_db/

@@ -11,6 +11,8 @@ from src.evaluation import explain_model, explain_single_prediction
 from src.ai_assistant.prompts import build_explainer_prompt, DISCLAIMER
 from src.ai_assistant.llm_client import simple_completion
 from src.ai_assistant.grounding import check_grounding
+from src.ai_assistant.rag.retriever import retrieve_relevant_chunks
+from src.ai_assistant.prompts import build_rag_prompt
 
 
 def call_prediction_tool(patient_input: dict, bundle: dict) -> dict:
@@ -60,7 +62,23 @@ def call_shap_explainer_tool(prediction_result: dict, shap_explanation: dict) ->
 
 def call_rag_tool(user_question: str) -> dict:
     """
-    Tool type 2: RAG over CKD reference documents. Day 17 will wire this to
-    a ChromaDB/FAISS retrieval pipeline plus a cited LLM answer.
+    Tool type 2: retrieve relevant reference chunks, build a grounded
+    prompt, and get an LLM answer with citations. Falls back to an
+    explicit "no relevant info" response rather than guessing, if nothing
+    relevant was retrieved.
     """
-    raise NotImplementedError("Wired in Day 17 (Document Intelligence / RAG)")
+    chunks = retrieve_relevant_chunks(user_question, top_k=3)
+    prompt, has_context = build_rag_prompt(user_question, chunks)
+
+    answer = simple_completion(prompt, max_tokens=250)
+
+    if DISCLAIMER not in answer:
+        answer = f"{answer.strip()}\n\n{DISCLAIMER}"
+
+    sources = sorted(set(c["source"] for c in chunks if c["distance"] <= 1.0)) if has_context else []
+
+    return {
+        "answer": answer,
+        "has_grounded_context": has_context,
+        "sources": sources,
+    }

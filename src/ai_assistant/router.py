@@ -1,9 +1,16 @@
 # src/ai_assistant/router.py
 """
-Router: decides which of the three tool types a user's message needs,
-before any tool actually runs. This is intentionally simple keyword-based
-routing for now -- Day 18 may replace this with the LLM's own native
-tool-use/function-calling if that proves more reliable in practice.
+Router: decides which AI assistant tool should handle a user's message
+before any tool actually runs.
+
+Current routing strategy:
+1. Guardrails (highest priority)
+2. SHAP explanation requests
+3. RAG knowledge-base questions
+4. No matching tool
+
+This is intentionally simple keyword-based routing. It can later be
+replaced with LLM function calling/tool calling if desired.
 """
 
 from src.ai_assistant.tools import (
@@ -11,38 +18,95 @@ from src.ai_assistant.tools import (
     call_shap_explainer_tool,
     call_rag_tool,
 )
+
 from src.ai_assistant.guardrails import check_guardrails
 
-RAG_KEYWORDS = ["what does", "normal range", "typically indicate", "stage", "means"]
-EXPLAIN_KEYWORDS = ["why", "explain this prediction", "what factors"]
+
+# Questions that should be answered using the knowledge base (RAG)
+RAG_KEYWORDS = [
+    "what does",
+    "normal range",
+    "typically indicate",
+    "stage",
+    "means",
+]
+
+# Questions asking why a prediction was made
+EXPLAIN_KEYWORDS = [
+    "why",
+    "explain this prediction",
+    "what factors",
+]
 
 
 def route_message(user_message: str, context: dict = None) -> dict:
     """
-    context can carry the current session's last prediction result / SHAP
-    values, if the user is asking a follow-up about a prediction they just
-    got, rather than a general reference question.
+    Routes a user's message to the appropriate assistant tool.
 
-    Returns a dict describing what happened. Shape varies by tool:
-      - guardrail_refusal: {"tool": "guardrail_refusal", "message": str}
-      - shap_explainer:    {"tool": "shap_explainer", "explanation": str,
-                             "grounded": bool, "ungrounded_numbers": list}
-      - rag:               {"tool": "rag", "status": "not_yet_implemented"}
-      - none_matched:      {"tool": "none_matched", "status": str}
+    Parameters
+    ----------
+    user_message : str
+        The user's input message.
+
+    context : dict, optional
+        Session context containing the latest prediction and SHAP
+        explanation for follow-up questions.
+
+    Returns
+    -------
+    dict
+        Response from the selected tool.
     """
+
+    # ---------------------------------------------------------
+    # 1. Safety Guardrails
+    # ---------------------------------------------------------
     guardrail_result = check_guardrails(user_message)
+
     if guardrail_result["blocked"]:
-        return {"tool": "guardrail_refusal", "message": guardrail_result["reason"]}
+        return {
+            "tool": "guardrail_refusal",
+            "message": guardrail_result["reason"],
+        }
 
     lowered = user_message.lower()
 
-    if context and context.get("last_prediction") and any(k in lowered for k in EXPLAIN_KEYWORDS):
+    # ---------------------------------------------------------
+    # 2. SHAP Prediction Explanation
+    # ---------------------------------------------------------
+    if (
+        context
+        and context.get("last_prediction")
+        and any(keyword in lowered for keyword in EXPLAIN_KEYWORDS)
+    ):
         prediction_result = context["last_prediction"]
         shap_explanation = context["last_shap_explanation"]
-        tool_result = call_shap_explainer_tool(prediction_result, shap_explanation)
-        return {"tool": "shap_explainer", **tool_result}
 
-    if any(k in lowered for k in RAG_KEYWORDS):
-        return {"tool": "rag", "status": "not_yet_implemented"}
+        tool_result = call_shap_explainer_tool(
+            prediction_result,
+            shap_explanation,
+        )
 
-    return {"tool": "none_matched", "status": "no_tool_confidently_matched"}
+        return {
+            "tool": "shap_explainer",
+            **tool_result,
+        }
+
+    # ---------------------------------------------------------
+    # 3. RAG Knowledge Base
+    # ---------------------------------------------------------
+    if any(keyword in lowered for keyword in RAG_KEYWORDS):
+        tool_result = call_rag_tool(user_message)
+
+        return {
+            "tool": "rag",
+            **tool_result,
+        }
+
+    # ---------------------------------------------------------
+    # 4. No Tool Matched
+    # ---------------------------------------------------------
+    return {
+        "tool": "none_matched",
+        "status": "no_tool_confidently_matched",
+    }
