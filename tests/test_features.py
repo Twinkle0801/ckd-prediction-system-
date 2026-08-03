@@ -45,7 +45,7 @@ def test_anemia_flag_uses_raw_hemoglobin_not_scaled(cleaned_ckd_df):
 def test_build_features_runs_domain_before_scale(cleaned_ckd_df):
     """Full pipeline order check — this is the test that would have caught
     the original bug if domain features were computed AFTER scaling."""
-    built, scaler = build_features(cleaned_ckd_df, fit=True)
+    built, scaler = build_features(cleaned_ckd_df, fit=True, scale=True)
     # after scaling, numeric cols should have ~zero mean (StandardScaler property)
     assert abs(built[NUMERIC_COLS].mean().mean()) < 1e-6
     # domain feature should still exist and be finite (not NaN from a bad scale-then-divide)

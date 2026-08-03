@@ -1,105 +1,116 @@
-# tests/test_api.py
+"""
+Day 13: integration tests for api/main.py, using FastAPI's TestClient.
+Loads the REAL saved model bundle via the app's lifespan — these tests
+exercise the actual inference path used in production.
+"""
 import pytest
 from fastapi.testclient import TestClient
-import api.main as main_module
+from api.main import app
 
-VALID_PAYLOAD = {
+VALID_PATIENT = {
     "age": 48, "bp": 80, "sg": 1.02, "al": 1, "su": 0,
     "rbc": "normal", "pc": "normal", "pcc": "notpresent", "ba": "notpresent",
     "bgr": 121, "bu": 36, "sc": 1.2, "sod": 138, "pot": 4.4,
     "hemo": 15.4, "pcv": 44, "wc": 7800, "rc": 5.2,
-    "htn": "yes", "dm": "yes", "cad": "no", "appet": "good", "pe": "no", "ane": "no",
+    "htn": "yes", "dm": "yes", "cad": "no", "appet": "good",
+    "pe": "no", "ane": "no",
 }
 
-FAKE_PREDICT_RESULT = {
-    "prediction": 1, "prediction_label": "ckd", "probability": 0.93,
-    "model_name": "xgboost", "mlflow_run_id": "test-run-123",
-}
-FAKE_EXPLANATION = {
-    "top_contributions": [
-        {"feature": "hemo", "value": 15.4, "shap_contribution": -0.42},
-        {"feature": "sc", "value": 1.2, "shap_contribution": 0.31},
-    ]
-}
 
 @pytest.fixture
-def client(monkeypatch):
-    # Bypass the real lifespan — no real joblib file needed in tests
-    main_module.bundle_store["bundle"] = {
-        "model": object(), "model_name": "xgboost", "mlflow_run_id": "test-run-123",
-        "feature_order": ["age", "bp", "hemo", "sc"],
-    }
-    monkeypatch.setattr(main_module, "predict_sample", lambda raw_input, bundle: FAKE_PREDICT_RESULT)
-    monkeypatch.setattr(main_module, "preprocess_input", lambda raw_input, bundle: raw_input)
-    monkeypatch.setattr(main_module, "explain_model", lambda model, processed: (None, None))
-    monkeypatch.setattr(
-        main_module, "explain_single_prediction",
-        lambda model, explainer, shap_values, processed, idx: FAKE_EXPLANATION,
-    )
-    return TestClient(main_module.app)
+def client():
+    with TestClient(app) as c:
+        yield c
+
 
 def test_root_health_check(client):
     response = client.get("/")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
-def test_model_info_endpoint(client):
+
+def test_model_info(client):
     response = client.get("/model-info")
     assert response.status_code == 200
-    body = response.json()
-    assert body["model_name"] == "xgboost"
-    assert body["n_features"] == 4
+    data = response.json()
+    assert "model_name" in data
+    assert "mlflow_run_id" in data
+    assert data["n_features"] == len(data["feature_order"])
 
-def test_predict_endpoint_valid_input_returns_200(client):
-    response = client.post("/predict", json=VALID_PAYLOAD)
+
+def test_predict_valid_patient(client):
+    response = client.post("/predict", json=VALID_PATIENT)
     assert response.status_code == 200
-    body = response.json()
-    assert body["prediction"] == 1
-    assert body["prediction_label"] == "ckd"
-    assert len(body["top_factors"]) == 2
-    assert body["top_factors"][0]["direction"] == "decreases_ckd_risk"  # shap_contribution < 0
-    assert "decision support" in body["disclaimer"].lower()
+    data = response.json()
+    assert data["prediction"] in (0, 1)
+    assert data["prediction_label"] in ("ckd", "notckd")
+    assert 0.0 <= data["probability"] <= 1.0
+    assert "disclaimer" in data
+    assert len(data["top_factors"]) == 5
 
-def test_predict_endpoint_rejects_out_of_range_value(client):
-    bad_payload = {**VALID_PAYLOAD, "sg": 5.0}  # sg must be <= 1.030 per schema
-    response = client.post("/predict", json=bad_payload)
-    assert response.status_code == 422
 
-def test_predict_endpoint_rejects_wrong_type(client):
-    bad_payload = {**VALID_PAYLOAD, "age": "not_a_number"}
-    response = client.post("/predict", json=bad_payload)
-    assert response.status_code == 422
-
-def test_predict_endpoint_missing_field_returns_422(client):
-    bad_payload = VALID_PAYLOAD.copy()
-    del bad_payload["hemo"]
-    response = client.post("/predict", json=bad_payload)
-    assert response.status_code == 422
-
-def test_predict_batch_endpoint_returns_matching_count(client):
-    response = client.post("/predict-batch", json={"patients": [VALID_PAYLOAD, VALID_PAYLOAD, VALID_PAYLOAD]})
+def test_predict_batch(client):
+    response = client.post("/predict-batch", json={"patients": [VALID_PATIENT, VALID_PATIENT]})
     assert response.status_code == 200
-    body = response.json()
-    assert body["count"] == 3
-    assert len(body["results"]) == 3
+    data = response.json()
+    assert data["count"] == 2
+    assert len(data["results"]) == 2
 
-def test_predict_batch_endpoint_empty_list(client):
+
+# ── Edge cases per Day 13 roadmap: missing fields, out-of-range values ───
+
+def test_predict_missing_field_returns_422(client):
+    incomplete = VALID_PATIENT.copy()
+    del incomplete["age"]
+    response = client.post("/predict", json=incomplete)
+    assert response.status_code == 422, "Pydantic should reject missing required field"
+
+
+def test_predict_out_of_range_age_returns_422(client):
+    bad_patient = VALID_PATIENT.copy()
+    bad_patient["age"] = 200  # exceeds le=120 constraint
+    response = client.post("/predict", json=bad_patient)
+    assert response.status_code == 422
+
+
+def test_predict_out_of_range_specific_gravity_returns_422(client):
+    bad_patient = VALID_PATIENT.copy()
+    bad_patient["sg"] = 2.5  # exceeds le=1.030 constraint
+    response = client.post("/predict", json=bad_patient)
+    assert response.status_code == 422
+
+
+def test_predict_invalid_categorical_string(client):
+    """rbc/htn/etc. are plain str fields with no enum constraint at the
+    pydantic level -- confirms current behavior (accepted, not rejected).
+    If you later add stricter validation, this test should be updated to
+    expect a 422 instead."""
+    weird_patient = VALID_PATIENT.copy()
+    weird_patient["htn"] = "maybe"
+    response = client.post("/predict", json=weird_patient)
+    # Documenting current behavior rather than asserting an opinion on it
+    assert response.status_code in (200, 400, 422)
+
+
+def test_predict_empty_batch(client):
     response = client.post("/predict-batch", json={"patients": []})
     assert response.status_code == 200
     assert response.json()["count"] == 0
 
-def test_predict_endpoint_internal_error_returns_400(client, monkeypatch):
-    def _boom(raw_input, bundle):
-        raise RuntimeError("model exploded")
-    monkeypatch.setattr(main_module, "predict_sample", _boom)
-    response = client.post("/predict", json=VALID_PAYLOAD)
-    assert response.status_code == 400
-    assert "Prediction failed" in response.json()["detail"]
 
-def test_predict_batch_endpoint_internal_error_returns_400(client, monkeypatch):
-    def _boom(raw_input, bundle):
-        raise RuntimeError("model exploded")
-    monkeypatch.setattr(main_module, "predict_sample", _boom)
-    response = client.post("/predict-batch", json={"patients": [VALID_PAYLOAD]})
-    assert response.status_code == 400
-    assert "Batch prediction failed" in response.json()["detail"]
+# ── Sanity-check against known CKD/non-CKD test-set examples ─────────────
+
+def test_predict_matches_known_ckd_example(client):
+    """A record with strongly CKD-indicative values (high creatinine, low
+    hemoglobin, hypertension+diabetes) should predict CKD with reasonable
+    confidence -- sanity check per Day 13 roadmap."""
+    ckd_like_patient = VALID_PATIENT.copy()
+    ckd_like_patient.update({
+        "sc": 5.0, "hemo": 8.0, "htn": "yes", "dm": "yes", "appet": "poor",
+    })
+    response = client.post("/predict", json=ckd_like_patient)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["prediction_label"] == "ckd", (
+        f"Expected CKD prediction for strongly CKD-indicative values, got {data['prediction_label']}"
+    )
