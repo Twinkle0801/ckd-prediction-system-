@@ -13,6 +13,9 @@ from src.ai_assistant.llm_client import simple_completion
 from src.ai_assistant.grounding import check_grounding
 from src.ai_assistant.rag.retriever import retrieve_relevant_chunks
 from src.ai_assistant.prompts import build_rag_prompt
+from src.ai_assistant.llm_client import completion_with_usage
+from src.ai_assistant.cost_tracker import log_query_cost
+from src.ai_assistant.cache import get_cached, set_cached
 
 
 def call_prediction_tool(patient_input: dict, bundle: dict) -> dict:
@@ -63,22 +66,38 @@ def call_shap_explainer_tool(prediction_result: dict, shap_explanation: dict) ->
 def call_rag_tool(user_question: str) -> dict:
     """
     Tool type 2: retrieve relevant reference chunks, build a grounded
-    prompt, and get an LLM answer with citations. Falls back to an
-    explicit "no relevant info" response rather than guessing, if nothing
-    relevant was retrieved.
+    prompt, and get an LLM answer with citations. Checks cache first;
+    logs token cost on real (non-cached) calls.
     """
+    cached = get_cached(user_question)
+    if cached is not None:
+        result = cached.copy()
+        result["cache_hit"] = True
+        return result
+
     chunks = retrieve_relevant_chunks(user_question, top_k=3)
     prompt, has_context = build_rag_prompt(user_question, chunks)
 
-    answer = simple_completion(prompt, max_tokens=250)
+    completion = completion_with_usage(prompt, max_tokens=250)
+    answer = completion["text"]
+
+    log_query_cost(
+        user_question,
+        completion["input_tokens"],
+        completion["output_tokens"],
+        cache_hit=False,
+    )
 
     if DISCLAIMER not in answer:
         answer = f"{answer.strip()}\n\n{DISCLAIMER}"
 
     sources = sorted(set(c["source"] for c in chunks if c["distance"] <= 1.0)) if has_context else []
 
-    return {
+    result = {
         "answer": answer,
         "has_grounded_context": has_context,
         "sources": sources,
+        "cache_hit": False,
     }
+    set_cached(user_question, result)
+    return result

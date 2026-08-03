@@ -8,3 +8,4 @@ mlruns/
 .coverage
 
 data/chroma_db/
+logs/*.jsonl

@@ -48,3 +48,36 @@ def simple_completion(prompt: str, max_tokens: int = 200) -> str:
         return response.content[0].text
     except anthropic.APIError as e:
         return f"[MOCK] Real API call failed ({type(e).__name__}) -- placeholder response used instead."
+
+def completion_with_usage(prompt: str, max_tokens: int = 200) -> dict:
+    """
+    Same as simple_completion, but also returns token usage for cost
+    tracking. Used by call_rag_tool so Day 18 cost logging reflects real
+    API usage instead of estimates.
+    """
+    client = get_client()
+
+    if client is None:
+        return {
+            "text": "[MOCK] No API key configured -- this is a placeholder response.",
+            "input_tokens": 0,
+            "output_tokens": 0,
+        }
+
+    try:
+        response = client.messages.create(
+            model=MODEL_NAME,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return {
+            "text": response.content[0].text,
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        }
+    except anthropic.APIError as e:
+        return {
+            "text": f"[MOCK] Real API call failed ({type(e).__name__}) -- placeholder response used instead.",
+            "input_tokens": 0,
+            "output_tokens": 0,
+        }

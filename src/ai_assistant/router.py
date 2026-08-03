@@ -29,6 +29,10 @@ RAG_KEYWORDS = [
     "typically indicate",
     "stage",
     "means",
+    "risk factor",
+    "concern",
+    "why is",
+    "what is",
 ]
 
 # Questions asking why a prediction was made
