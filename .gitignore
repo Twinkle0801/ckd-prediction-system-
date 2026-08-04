@@ -9,3 +9,4 @@ mlruns/
 
 data/chroma_db/
 logs/*.jsonl
+mlartifacts/

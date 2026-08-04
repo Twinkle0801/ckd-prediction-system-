@@ -42,14 +42,27 @@ def add_domain_features(df: pd.DataFrame) -> pd.DataFrame:
     df["anemia_ckd_flag"] = ((df["ane"] == 1) & (df["hemo"] < 12)).astype(int)
     return df
 
-def build_features(df: pd.DataFrame, fit: bool = True, scaler: StandardScaler = None):
+def build_features(df: pd.DataFrame, fit: bool = True, scaler: StandardScaler = None, scale: bool = False):
+    """
+    Day 8 leakage fix: `scale` now defaults to False.
+
+    Previously this function always scaled numeric columns, which meant any
+    caller that ran it on the FULL dataset (e.g. the feature-engineering
+    notebook, before any train/test split existed) silently baked a
+    whole-dataset-fit StandardScaler into kidney_features.csv -- leaking
+    test-set statistics into training.
+
+    Scaling now happens ONLY in src/data_loader.py's load_and_prepare(),
+    via scale_train_test(), fit on X_train only, AFTER the split. Pass
+    scale=True explicitly only if you have a specific, deliberate reason
+    to scale before that point -- and be sure fit/split has already happened
+    for whatever df you're passing in.
+    """
     df = encode_categoricals(df)
     df = add_domain_features(df)              # FIX: moved BEFORE scale_numeric
-    df, scaler = scale_numeric(df, scaler=scaler, fit=fit)
+    if scale:
+        df, scaler = scale_numeric(df, scaler=scaler, fit=fit)
     return df, scaler
-
-from sklearn.preprocessing import StandardScaler
-
 
 def scale_train_test(
     X_train: pd.DataFrame,
