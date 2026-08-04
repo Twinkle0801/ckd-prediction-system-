@@ -1,23 +1,39 @@
 # src/ai_assistant/router.py
-
 """
 Router: decides which AI assistant tool should handle a user's message
 before any tool actually runs.
 
-Routing priority:
-1. Safety Guardrails
+Current routing strategy:
+1. Guardrails (highest priority)
 2. SHAP explanation requests
 3. RAG knowledge-base questions
 4. No matching tool
+
+This is intentionally simple keyword-based routing. It can later be
+replaced with LLM function calling/tool calling if desired.
 """
 
 from src.ai_assistant.tools import (
+    call_prediction_tool,
     call_shap_explainer_tool,
     call_rag_tool,
 )
 
 from src.ai_assistant.guardrails import check_guardrails
 
+
+# Questions that should be answered using the knowledge base (RAG)
+RAG_KEYWORDS = [
+    "what does",
+    "normal range",
+    "typically indicate",
+    "stage",
+    "means",
+    "risk factor",
+    "concern",
+    "why is",
+    "what is",
+]
 
 # Questions asking why a prediction was made
 EXPLAIN_KEYWORDS = [
@@ -30,6 +46,20 @@ EXPLAIN_KEYWORDS = [
 def route_message(user_message: str, context: dict = None) -> dict:
     """
     Routes a user's message to the appropriate assistant tool.
+
+    Parameters
+    ----------
+    user_message : str
+        The user's input message.
+
+    context : dict, optional
+        Session context containing the latest prediction and SHAP
+        explanation for follow-up questions.
+
+    Returns
+    -------
+    dict
+        Response from the selected tool.
     """
 
     # ---------------------------------------------------------
@@ -69,42 +99,7 @@ def route_message(user_message: str, context: dict = None) -> dict:
     # ---------------------------------------------------------
     # 3. RAG Knowledge Base
     # ---------------------------------------------------------
-    QUESTION_STARTERS = (
-        "what",
-        "how",
-        "why",
-        "when",
-        "where",
-        "which",
-        "who",
-        "can",
-        "does",
-        "is",
-        "are",
-    )
-
-    CKD_TERMS = (
-        "ckd",
-        "kidney",
-        "renal",
-        "creatinine",
-        "gfr",
-        "egfr",
-        "dialysis",
-        "albumin",
-        "hemoglobin",
-        "blood urea",
-        "protein",
-        "hypertension",
-        "diabetes",
-        "anemia",
-        "blood pressure",
-    )
-
-    if (
-        lowered.startswith(QUESTION_STARTERS)
-        or any(term in lowered for term in CKD_TERMS)
-    ):
+    if any(keyword in lowered for keyword in RAG_KEYWORDS):
         tool_result = call_rag_tool(user_message)
 
         return {
