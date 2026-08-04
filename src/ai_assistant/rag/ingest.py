@@ -58,7 +58,7 @@ def build_index():
     except Exception:
         pass  # collection didn't exist yet -- fine on first run
 
-    collection = client.create_collection(COLLECTION_NAME)
+    collection = client.get_or_create_collection(COLLECTION_NAME)
 
     model = SentenceTransformer(EMBEDDING_MODEL_NAME)
 
